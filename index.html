@@ -1,0 +1,1155 @@
+<!doctype html>
+<html lang="ja">
+
+<head>
+    <meta charset="utf-8">
+    <title>カップシャッフルゲーム</title>
+    <style>
+        :root {
+            --table: #2e7d32;
+            --panel: #0b1220;
+            --accent: #60a5fa;
+        }
+
+        body {
+            margin: 0;
+            background: var(--panel);
+            color: #eef2ff;
+            font-family: 'Noto Sans JP', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 18px 10px;
+            box-sizing: border-box;
+        }
+
+        .container {
+            width: min(900px, 100%);
+            text-align: center;
+        }
+
+        h1 {
+            margin-bottom: 5px;
+        }
+
+        .hint {
+            font-size: 13px;
+            color: #bcd4c9;
+            margin-bottom: 10px;
+        }
+
+        .controls {
+            position: relative;
+            z-index: 20;
+            margin-bottom: 10px;
+        }
+
+        .player-settings {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px 14px;
+            margin: 10px auto;
+            font-size: 13px;
+        }
+
+        #playerName {
+            width: 150px;
+            padding: 8px 10px;
+            border: 1px solid #64748b;
+            border-radius: 8px;
+            font: inherit;
+        }
+
+        .setting-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .game-stage {
+            position: relative;
+            width: min(800px, 100%);
+            margin: 0 auto;
+        }
+
+        .difficulty-btn {
+            background: #fff;
+            border: none;
+            padding: 8px 14px;
+            margin: 3px;
+            border-radius: 8px;
+            color: #033;
+            cursor: pointer;
+            font-weight: 700;
+            transition: all 0.2s;
+        }
+
+        .difficulty-btn:hover {
+            filter: brightness(1.1);
+        }
+
+        .difficulty-btn.selected {
+            background: #60a5fa;
+            color: #06203a;
+            box-shadow: 0 0 10px rgba(96, 165, 250, 0.7);
+            transform: none;
+            /* ← 上ズレ防止 */
+        }
+
+        #startBtn {
+            background: var(--accent);
+            border: none;
+            padding: 8px 14px;
+            border-radius: 8px;
+            color: #06203a;
+            cursor: pointer;
+            font-weight: 800;
+        }
+
+        #startBtn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: auto;
+            touch-action: manipulation;
+            background: linear-gradient(180deg, var(--table), #1b5e20);
+            border-radius: 12px;
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.6);
+        }
+
+        canvas.correct-hit {
+            animation: correctPulse 0.65s ease-out;
+        }
+
+        canvas.wrong-hit {
+            animation: wrongShake 0.55s ease-out;
+        }
+
+        canvas.legendary-hit {
+            animation: legendaryCanvas 1.1s ease-in-out 3;
+        }
+
+        #fxLayer {
+            position: absolute;
+            inset: 0;
+            overflow: hidden;
+            border-radius: 12px;
+            pointer-events: none;
+        }
+
+        #fxLayer::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+        }
+
+        #fxLayer.correct-flash::before {
+            background: radial-gradient(circle, rgba(255,255,190,.8), rgba(34,197,94,.15) 55%, transparent 75%);
+            animation: flash .7s ease-out;
+        }
+
+        #fxLayer.wrong-flash::before {
+            background: radial-gradient(circle, transparent 15%, rgba(239,68,68,.55));
+            animation: flash .65s ease-out;
+        }
+
+        #fxLayer.milestone-flash::before {
+            background: radial-gradient(circle, rgba(255,255,255,.95), rgba(250,204,21,.45) 45%, transparent 76%);
+            animation: flash 1.25s ease-out;
+        }
+
+        #fxLayer.legendary-flash::before {
+            background: conic-gradient(from 0deg, rgba(255,0,100,.7), rgba(255,220,0,.75), rgba(0,255,180,.65), rgba(50,120,255,.7), rgba(190,60,255,.7), rgba(255,0,100,.7));
+            animation: legendaryFlash 1s ease-in-out 4;
+        }
+
+        .particle {
+            position: absolute;
+            left: var(--x);
+            top: var(--y);
+            width: var(--size);
+            height: var(--size);
+            background: var(--color);
+            border-radius: var(--radius, 50%);
+            box-shadow: 0 0 10px var(--color);
+            animation: particleBurst var(--duration) cubic-bezier(.15,.65,.3,1) forwards;
+        }
+
+        @keyframes correctPulse {
+            30% { filter: brightness(1.45) saturate(1.35); box-shadow: 0 0 45px rgba(74,222,128,.9); }
+        }
+
+        @keyframes wrongShake {
+            15%, 45%, 75% { transform: translateX(-10px); filter: saturate(1.5); }
+            30%, 60%, 90% { transform: translateX(10px); }
+        }
+
+        @keyframes flash {
+            0% { opacity: 0; }
+            18% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+
+        @keyframes particleBurst {
+            0% { transform: translate(-50%, -50%) scale(.3) rotate(0); opacity: 1; }
+            100% { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(1) rotate(var(--spin)); opacity: 0; }
+        }
+
+        @keyframes legendaryCanvas {
+            0%, 100% { filter: brightness(1) saturate(1); transform: scale(1); }
+            45% { filter: brightness(1.7) saturate(2); transform: scale(1.015); box-shadow: 0 0 70px #facc15, 0 0 110px #c084fc; }
+        }
+
+        @keyframes legendaryFlash {
+            0%, 100% { opacity: 0; transform: scale(.8) rotate(0); }
+            40% { opacity: .65; transform: scale(1.35) rotate(35deg); }
+        }
+
+        #result {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            padding: 14px 26px;
+            border-radius: 12px;
+            font-size: 34px;
+            font-weight: 800;
+            display: none;
+            z-index: 3;
+        }
+
+        #result.milestone {
+            background: linear-gradient(135deg, #fff7ae, #f59e0b) !important;
+            color: #713f12 !important;
+            font-size: 48px !important;
+            text-shadow: 0 2px 0 #fff, 0 0 24px rgba(250,204,21,.9) !important;
+            animation: milestonePop .8s cubic-bezier(.18,.89,.32,1.28) infinite alternate;
+        }
+
+        #result.super-milestone {
+            background: linear-gradient(135deg, #ffffff, #facc15, #fb7185, #60a5fa) !important;
+            font-size: 54px !important;
+            box-shadow: 0 0 50px rgba(250,204,21,.95);
+        }
+
+        #result.legendary {
+            width: min(680px, 85%);
+            background: linear-gradient(90deg, #facc15, #fff, #fb7185, #c084fc, #60a5fa, #fff, #facc15) !important;
+            background-size: 300% 100% !important;
+            color: #3b0764 !important;
+            font-size: 48px !important;
+            line-height: 1.35;
+            white-space: pre-line;
+            border: 5px solid #fff;
+            box-shadow: 0 0 30px #fff, 0 0 75px #facc15, 0 0 120px #c084fc;
+            animation: legendaryMessage .55s cubic-bezier(.18,.89,.32,1.28) infinite alternate !important;
+        }
+
+        @keyframes legendaryMessage {
+            from { transform: translate(-50%, -50%) scale(.92) rotate(-1deg); background-position: 0 0; }
+            to { transform: translate(-50%, -50%) scale(1.06) rotate(1deg); background-position: 100% 0; }
+        }
+
+        #rankingPanel {
+            width: min(800px, 100%);
+            margin: 12px auto 0;
+            padding: 10px 14px;
+            box-sizing: border-box;
+            border-radius: 10px;
+            background: rgba(255,255,255,.07);
+            text-align: left;
+            font-size: 13px;
+        }
+
+        #rankingPanel strong { color: #fde047; }
+        #rankingList { margin: 7px 0 0; padding-left: 24px; columns: 2; }
+        #rankingList li { padding: 2px 0; }
+
+        .ranking-actions {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .small-btn {
+            padding: 5px 9px;
+            border: 1px solid #64748b;
+            border-radius: 7px;
+            background: #1e293b;
+            color: #e2e8f0;
+            cursor: pointer;
+            font: inherit;
+        }
+
+        #resetRankingBtn {
+            display: none;
+            border-color: #ef4444;
+            background: #7f1d1d;
+        }
+
+        #developerStatus {
+            display: none;
+            color: #86efac;
+            font-weight: 700;
+        }
+
+        #developerLogin {
+            display: none;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 7px;
+            margin-top: 8px;
+        }
+
+        #developerLogin.open { display: flex; }
+
+        #developerPassword {
+            width: 145px;
+            padding: 6px 8px;
+            border: 1px solid #64748b;
+            border-radius: 7px;
+            font: inherit;
+        }
+
+        #developerError {
+            min-height: 1em;
+            margin-top: 5px;
+            color: #fca5a5;
+            text-align: right;
+        }
+
+        body.developer-mode #resetRankingBtn,
+        body.developer-mode #developerStatus {
+            display: inline-block;
+        }
+
+        @media (max-width: 600px) {
+            body { align-items: flex-start; padding-top: 8px; }
+            h1 { font-size: 24px; }
+            .difficulty-btn, #startBtn { padding: 10px 12px; }
+            #result { font-size: 25px !important; white-space: nowrap; }
+            #result.milestone { font-size: 30px !important; }
+            #result.super-milestone { font-size: 34px !important; }
+            #result.legendary { width: 82%; font-size: 27px !important; }
+            #rankingList { columns: 1; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .particle, canvas.correct-hit, canvas.wrong-hit, #result.milestone {
+                animation-duration: .01ms !important;
+                animation-iteration-count: 1 !important;
+            }
+        }
+
+        body.motion-off #result.milestone,
+        body.motion-off canvas.correct-hit,
+        body.motion-off canvas.wrong-hit,
+        body.motion-off canvas.legendary-hit,
+        body.motion-off .particle {
+            animation: none !important;
+        }
+
+        @keyframes milestonePop {
+            from { transform: translate(-50%, -50%) scale(.92) rotate(-1deg); }
+            to { transform: translate(-50%, -50%) scale(1.08) rotate(1deg); }
+        }
+
+        .difficulty-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            filter: grayscale(0.6);
+        }
+
+        .difficulty-btn.locked {
+            position: relative;
+            background: #334155;
+            color: #cbd5e1;
+            cursor: not-allowed;
+            filter: grayscale(0.6);
+        }
+
+        .difficulty-btn[data-tooltip] { position: relative; }
+
+        .difficulty-btn[data-tooltip]:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            left: 50%;
+            top: calc(100% + 8px);
+            transform: translateX(-50%);
+            width: max-content;
+            max-width: 220px;
+            padding: 7px 10px;
+            border-radius: 7px;
+            background: #020617;
+            color: #fff;
+            box-shadow: 0 5px 18px rgba(0,0,0,.45);
+            font-size: 12px;
+            white-space: nowrap;
+            z-index: 10;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>カップシャッフルゲーム</h1>
+        <div class="hint">難易度を選んでスタート。最初に玉の位置が表示されます。</div>
+        <div class="player-settings">
+            <label>プレイヤー名
+                <input id="playerName" maxlength="12" placeholder="名前を入力" autocomplete="off">
+            </label>
+            <label class="setting-toggle"><input id="bgmToggle" type="checkbox" checked> BGM</label>
+            <label class="setting-toggle"><input id="sfxToggle" type="checkbox" checked> 効果音</label>
+            <label class="setting-toggle"><input id="motionToggle" type="checkbox" checked> 画面演出</label>
+        </div>
+        <div class="controls">
+            <button class="difficulty-btn" data-diff="easy">簡単</button>
+            <button class="difficulty-btn" data-diff="normal">普通</button>
+            <button class="difficulty-btn" data-diff="hard"
+                title="この難易度以上をクリアできたらすごい！"
+                data-tooltip="この難易度以上をクリアできたらすごい！">難しい</button>
+            <button class="difficulty-btn" data-diff="extreme">激ムズ</button>
+            <button class="difficulty-btn locked" data-diff="oni" aria-disabled="true"
+                title="激ムズで5回連続成功すると解放"
+                data-tooltip="激ムズで5回連続成功すると解放">鬼ムズ 🔒</button>
+            <button id="startBtn" disabled>スタート</button>
+        </div>
+        <div class="game-stage">
+            <canvas id="gameCanvas" width="800" height="500"></canvas>
+            <div id="fxLayer"></div>
+            <div id="result"></div>
+        </div>
+        <div id="rankingPanel">
+            <strong id="rankingTitle">難易度を選ぶとランキングを表示します</strong>
+            <ol id="rankingList"></ol>
+            <div class="ranking-actions">
+                <span id="developerStatus">開発者モード中</span>
+                <button id="developerModeBtn" class="small-btn" type="button">開発者モード</button>
+                <button id="resetRankingBtn" class="small-btn" type="button">ランキングをリセット</button>
+            </div>
+            <div id="developerLogin">
+                <input id="developerPassword" type="password" placeholder="開発者パスワード" autocomplete="off">
+                <button id="developerLoginBtn" class="small-btn" type="button">認証</button>
+            </div>
+            <div id="developerError" aria-live="polite"></div>
+        </div>
+    </div>
+
+    <script>
+        let bgm1 = new Audio('Almond_Nuts.mp3');
+        bgm1.loop = true;
+        bgm1.volume = 0.07;
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const diffBtns = document.querySelectorAll('.difficulty-btn');
+        const difficultyLabels = Object.fromEntries(
+            Array.from(diffBtns, btn => [btn.dataset.diff, btn.textContent.replace('🔒', '').trim()])
+        );
+        const startBtn = document.getElementById('startBtn');
+        const resultDiv = document.getElementById('result');
+        const fxLayer = document.getElementById('fxLayer');
+        const playerNameInput = document.getElementById('playerName');
+        const bgmToggle = document.getElementById('bgmToggle');
+        const sfxToggle = document.getElementById('sfxToggle');
+        const motionToggle = document.getElementById('motionToggle');
+        const rankingTitle = document.getElementById('rankingTitle');
+        const rankingList = document.getElementById('rankingList');
+        const developerModeBtn = document.getElementById('developerModeBtn');
+        const resetRankingBtn = document.getElementById('resetRankingBtn');
+        const developerLogin = document.getElementById('developerLogin');
+        const developerPassword = document.getElementById('developerPassword');
+        const developerLoginBtn = document.getElementById('developerLoginBtn');
+        const developerError = document.getElementById('developerError');
+
+        const STORAGE_KEY = 'cupShuffleRankingsV1';
+        const SETTINGS_KEY = 'cupShuffleSettingsV1';
+        let rankings = {};
+        let currentPlayer = '';
+        let sfxEnabled = true;
+        let motionEnabled = true;
+        let developerMode = false;
+        let oniUnlocked = false;
+
+        try {
+            rankings = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+            const savedSettings = JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {};
+            bgmToggle.checked = savedSettings.bgm !== false;
+            sfxToggle.checked = savedSettings.sfx !== false;
+            motionToggle.checked = savedSettings.motion !== false;
+            playerNameInput.value = '';
+            currentPlayer = '';
+            sfxEnabled = sfxToggle.checked;
+            motionEnabled = motionToggle.checked;
+        } catch (_) {}
+        document.body.classList.toggle('motion-off', !motionEnabled);
+
+        let cups = [];
+        let isShuffling = false;
+        let selectedDiff = null;
+        let gameActive = false;
+        let showInitial = false;
+        let liftingCup = null;
+        let liftAmount = 0;
+
+        // 実際のカウンター（内部状態）
+        let streak = {
+            easy: 0,
+            normal: 0,
+            hard: 0,
+            extreme: 0,
+            oni: 0
+        };
+
+        // 表示用カウンター（画面に描画する値）
+        // 不正解時は streak を 0 にしても displayedStreak はそのままにしておく
+        let displayedStreak = {
+            easy: 0,
+            normal: 0,
+            hard: 0,
+            extreme: 0,
+            oni: 0
+        };
+
+        const cfgBase = {
+            tableY: 380,
+            lift: 46,
+            cupGap: 28
+        };
+        let cfg = {
+            ...cfgBase,
+            cupW: 140,
+            cupH: 160
+        };
+
+        const DIFF = {
+            easy: {
+                count: 3,
+                swaps: 6,
+                speed: 560
+            },
+            normal: {
+                count: 4,
+                swaps: 12,
+                speed: 380
+            },
+            hard: {
+                count: 5,
+                swaps: 24,
+                speed: 290
+            },
+            extreme: {
+                count: 5,
+                swaps: 28,
+                speed: 200
+            },
+            oni: {
+                count: 5,
+                swaps: 36,
+                speed: 150
+            }
+        };
+
+        const audioCtx = new(window.AudioContext || window.webkitAudioContext)();
+
+        function playTone(f, d = 0.12, t = 'sine', v = 0.08) {
+            if (!sfxEnabled) return;
+            const o = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            o.type = t;
+            o.frequency.value = f;
+            g.gain.value = v;
+            o.connect(g);
+            g.connect(audioCtx.destination);
+            o.start();
+            g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + d);
+            setTimeout(() => o.stop(), d * 1000);
+        }
+
+        function playShuffleTick() {
+            playTone(900, 0.2, 'triangle', 0.03);
+        }
+
+        function playCorrect() {
+            playTone(523, 0.22, 'triangle', 0.11);
+            setTimeout(() => playTone(659, 0.24, 'triangle', 0.1), 75);
+            setTimeout(() => playTone(784, 0.3, 'sine', 0.11), 150);
+            setTimeout(() => playTone(1047, 0.36, 'sine', 0.08), 230);
+        }
+
+        function playWrong() {
+            playTone(190, 0.32, 'sawtooth', 0.12);
+            setTimeout(() => playTone(145, 0.4, 'square', 0.08), 130);
+            setTimeout(() => playTone(95, 0.48, 'sawtooth', 0.07), 270);
+        }
+
+        function playMilestone() {
+            [523, 659, 784, 1047, 1319].forEach((note, i) => {
+                setTimeout(() => {
+                    playTone(note, 0.55, i < 3 ? 'triangle' : 'sine', 0.12);
+                    if (i >= 3) playTone(note / 2, 0.6, 'sine', 0.06);
+                }, i * 105);
+            });
+        }
+
+        function playLegendary() {
+            const melody = [523, 659, 784, 1047, 784, 1047, 1319, 1568];
+            melody.forEach((note, i) => {
+                setTimeout(() => {
+                    playTone(note, 0.7, i % 2 ? 'sine' : 'triangle', 0.14);
+                    playTone(note / 2, 0.75, 'sine', 0.07);
+                }, i * 145);
+            });
+            [131, 196, 262, 392].forEach((note, i) => {
+                setTimeout(() => playTone(note, 0.9, 'sawtooth', 0.055), i * 320);
+            });
+            setTimeout(() => {
+                [523, 659, 784, 1047, 1319].forEach(note => playTone(note, 1.4, 'sine', 0.075));
+            }, 1350);
+        }
+
+        function restartAnimation(element, className) {
+            element.classList.remove(className);
+            void element.offsetWidth;
+            element.classList.add(className);
+            setTimeout(() => element.classList.remove(className), 1400);
+        }
+
+        function burstParticles(count, milestone = false, wrong = false) {
+            const colors = wrong
+                ? ['#ef4444', '#fb7185', '#f97316', '#fff', '#7f1d1d']
+                : milestone
+                ? ['#facc15', '#fb7185', '#60a5fa', '#4ade80', '#fff', '#c084fc']
+                : ['#fde047', '#4ade80', '#fff', '#86efac'];
+            for (let i = 0; i < count; i++) {
+                const particle = document.createElement('i');
+                particle.className = 'particle';
+                const angle = Math.random() * Math.PI * 2;
+                const distance = (milestone ? 130 : 70) + Math.random() * (milestone ? 270 : 150);
+                particle.style.setProperty('--x', `${35 + Math.random() * 30}%`);
+                particle.style.setProperty('--y', `${35 + Math.random() * 30}%`);
+                particle.style.setProperty('--dx', `${Math.cos(angle) * distance}px`);
+                particle.style.setProperty('--dy', `${Math.sin(angle) * distance}px`);
+                particle.style.setProperty('--spin', `${Math.random() * 900 - 450}deg`);
+                particle.style.setProperty('--size', `${5 + Math.random() * (milestone ? 13 : 8)}px`);
+                particle.style.setProperty('--duration', `${650 + Math.random() * (milestone ? 900 : 450)}ms`);
+                particle.style.setProperty('--color', colors[Math.floor(Math.random() * colors.length)]);
+                particle.style.setProperty('--radius', milestone && i % 3 ? '2px' : '50%');
+                fxLayer.appendChild(particle);
+                setTimeout(() => particle.remove(), 1700);
+            }
+        }
+
+        function showHitEffect(correct, milestone = false) {
+            if (!motionEnabled) return;
+            restartAnimation(canvas, correct ? 'correct-hit' : 'wrong-hit');
+            restartAnimation(fxLayer, milestone ? 'milestone-flash' : correct ? 'correct-flash' : 'wrong-flash');
+            burstParticles(milestone ? 90 : correct ? 34 : 28, milestone, !correct);
+        }
+
+        function showLegendaryEffect() {
+            if (!motionEnabled) return;
+            canvas.classList.remove('legendary-hit');
+            fxLayer.classList.remove('legendary-flash');
+            void canvas.offsetWidth;
+            canvas.classList.add('legendary-hit');
+            fxLayer.classList.add('legendary-flash');
+            burstParticles(150, true);
+            setTimeout(() => burstParticles(130, true), 650);
+            setTimeout(() => burstParticles(150, true), 1300);
+            setTimeout(() => burstParticles(120, true), 2000);
+            setTimeout(() => {
+                canvas.classList.remove('legendary-hit');
+                fxLayer.classList.remove('legendary-flash');
+            }, 4200);
+        }
+
+        function saveSettings() {
+            try {
+                localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+                    bgm: bgmToggle.checked,
+                    sfx: sfxToggle.checked,
+                    motion: motionToggle.checked
+                }));
+            } catch (_) {}
+        }
+
+        function renderRanking() {
+            rankingList.textContent = '';
+            if (!selectedDiff) {
+                rankingTitle.textContent = '難易度を選ぶとランキングを表示します';
+                return;
+            }
+            rankingTitle.textContent = `${difficultyLabels[selectedDiff]}・このパソコンのベスト5`;
+            const entries = rankings[selectedDiff] || [];
+            if (!entries.length) {
+                const item = document.createElement('li');
+                item.textContent = 'まだ記録がありません';
+                rankingList.appendChild(item);
+                return;
+            }
+            entries.forEach(entry => {
+                const item = document.createElement('li');
+                item.textContent = `${entry.name}　${entry.score}連続`;
+                rankingList.appendChild(item);
+            });
+        }
+
+        function saveRanking(diff, score) {
+            if (!currentPlayer || score < 1) return;
+            const entries = rankings[diff] || [];
+            const old = entries.find(entry => entry.name === currentPlayer);
+            if (old && old.score >= score) return;
+            rankings[diff] = entries
+                .filter(entry => entry.name !== currentPlayer)
+                .concat({ name: currentPlayer, score, achievedAt: Date.now() })
+                .sort((a, b) => b.score - a.score || a.achievedAt - b.achievedAt)
+                .slice(0, 5);
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(rankings));
+            } catch (_) {}
+            renderRanking();
+        }
+
+        function updateDifficultyButtons(gameLocked = false) {
+            diffBtns.forEach(btn => {
+                const locked = btn.dataset.diff === 'oni' && !oniUnlocked;
+                btn.disabled = gameLocked;
+                btn.setAttribute('aria-disabled', locked ? 'true' : 'false');
+                btn.classList.toggle('locked', locked);
+                if (btn.dataset.diff === 'oni') {
+                    btn.textContent = locked ? '鬼ムズ 🔒' : '鬼ムズ';
+                    btn.title = locked ? '激ムズで5回連続成功すると解放' : '鬼ムズに挑戦できます';
+                    if (locked) btn.dataset.tooltip = '激ムズで5回連続成功すると解放';
+                    else btn.removeAttribute('data-tooltip');
+                }
+            });
+        }
+
+        function buildCups(count) {
+            cups = [];
+            const totalW = count * cfg.cupW + (count - 1) * cfg.cupGap;
+            const startX = (canvas.width - totalW) / 2;
+            for (let i = 0; i < count; i++) {
+                cups.push({
+                    x: startX + i * (cfg.cupW + cfg.cupGap),
+                    y: cfg.tableY - cfg.cupH,
+                    w: cfg.cupW,
+                    h: cfg.cupH,
+                    hasBall: false
+                });
+            }
+            cups[Math.floor(Math.random() * count)].hasBall = true;
+        }
+
+        function drawCup(c, lift = 0, reveal = false) {
+            const x = c.x,
+                y = c.y - lift + (c.offsetY || 0),
+                w = c.w,
+                h = c.h;
+            ctx.beginPath();
+            ctx.ellipse(x + w / 2, cfg.tableY + 8, w / 2 + 12, 14, 0, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(0,0,0,0.45)';
+            ctx.fill();
+            ctx.beginPath();
+            const inset = w * 0.18;
+            ctx.moveTo(x, y + h);
+            ctx.lineTo(x + w, y + h);
+            ctx.lineTo(x + w - inset, y + 6);
+            ctx.lineTo(x + inset, y + 6);
+            ctx.closePath();
+            const grad = ctx.createLinearGradient(x, y, x, y + h);
+            grad.addColorStop(0, '#ddd');
+            grad.addColorStop(1, '#666');
+            ctx.fillStyle = grad;
+            ctx.fill();
+            if (reveal && c.hasBall) drawBall(x + w / 2, cfg.tableY - 22);
+        }
+
+        function drawBall(cx, cy) {
+            ctx.beginPath();
+            ctx.arc(cx, cy, 14, 0, Math.PI * 2);
+            const g = ctx.createRadialGradient(cx - 6, cy - 6, 4, cx, cy, 18);
+
+            // 難易度で色を変える
+            const colors = {
+                easy: ['#b3fff0', '#00bfa5'],
+                normal: ['#b3e5ff', '#007bff'],
+                hard: ['#fff7b3', '#ffb400'],
+                extreme: ['#ffb3b3', '#d40000'],
+                oni: ['#f5d0fe', '#7e22ce']
+            };
+            const [light, dark] = colors[selectedDiff] || ['#fff8b3', '#ffb400'];
+            g.addColorStop(0, light);
+            g.addColorStop(1, dark);
+
+            ctx.fillStyle = g;
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+            ctx.stroke();
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            for (const c of cups) {
+                if (c !== liftingCup) drawCup(c);
+            }
+            if (showInitial) {
+                const b = cups.find(x => x.hasBall);
+                if (b) drawBall(b.x + b.w / 2, cfg.tableY - 22);
+            }
+            if (liftingCup) drawCup(liftingCup, liftAmount, true);
+
+            // 右上に連続正解数（表示用カウンターを使う）
+            ctx.font = '18px Noto Sans JP';
+            ctx.textAlign = 'right';
+            const padding = 20;
+            const colors = {
+                easy: '#6ee7b7',
+                normal: '#60a5fa',
+                hard: '#facc15',
+                extreme: '#f87171',
+                oni: '#e879f9'
+            };
+            let line = 0;
+            for (const diff of ['easy', 'normal', 'hard', 'extreme', 'oni']) {
+                ctx.fillStyle = colors[diff];
+                ctx.fillText(difficultyLabels[diff] + ' 連続正解: ' + displayedStreak[diff], canvas.width - padding, 30 + line * 24);
+                line++;
+            }
+        }
+
+        function animateSwap(i, j, duration) {
+            return new Promise(res => {
+                const A = cups[i],
+                    B = cups[j];
+                const startAx = A.x,
+                    startBx = B.x,
+                    dx = startBx - startAx,
+                    t0 = performance.now();
+
+                function step(now) {
+                    const p = Math.min(1, (now - t0) / duration);
+                    const ease = p < 0.5 ? 2 * p * p : -1 + (4 - 2 * p) * p;
+                    A.x = startAx + dx * ease;
+                    B.x = startBx - dx * ease;
+                    const arc = Math.sin(p * Math.PI) * Math.min(58, 28 + Math.abs(dx) * 0.1);
+                    A.offsetY = -arc;
+                    B.offsetY = arc * 0.52;
+                    draw();
+                    if (p < 1) requestAnimationFrame(step);
+                    else {
+                        A.x = startBx;
+                        B.x = startAx;
+                        A.offsetY = 0;
+                        B.offsetY = 0;
+                        [cups[i], cups[j]] = [cups[j], cups[i]];
+                        res();
+                    }
+                }
+                requestAnimationFrame(step);
+            });
+        }
+
+        async function shuffleTimes(times, speed) {
+            isShuffling = true;
+            let lastPair = '';
+            for (let t = 0; t < times; t++) {
+                let a, b, pair;
+                do {
+                    a = Math.floor(Math.random() * cups.length);
+                    b = Math.floor(Math.random() * cups.length);
+                    if (a === b) b = (a + 1) % cups.length;
+                    pair = [a, b].sort((x, y) => x - y).join('-');
+                } while (pair === lastPair);
+                lastPair = pair;
+                playShuffleTick();
+                await animateSwap(a, b, speed);
+            }
+            isShuffling = false;
+            gameActive = true;
+        }
+
+        async function revealCup(c) {
+            if (!gameActive) return;
+            isShuffling = true;
+            gameActive = false;
+            const dur = 320,
+                t0 = performance.now();
+            liftingCup = c;
+            liftAmount = 0;
+            await new Promise(r => {
+                function up(now) {
+                    const p = Math.min(1, (now - t0) / dur);
+                    liftAmount = cfg.lift * (1 - Math.pow(1 - p, 3));
+                    draw();
+                    if (p < 1) requestAnimationFrame(up);
+                    else r();
+                }
+                requestAnimationFrame(up);
+            });
+            const correct = c.hasBall;
+            let milestone = false;
+            let superMilestone = false;
+            let unlockedOniNow = false;
+            let legendary = false;
+            if (correct) {
+                streak[selectedDiff]++;
+                displayedStreak[selectedDiff]++;
+                milestone = streak[selectedDiff] === 3 || streak[selectedDiff] % 5 === 0;
+                superMilestone = streak[selectedDiff] % 10 === 0;
+                if (selectedDiff === 'extreme' && streak.extreme === 5 && !oniUnlocked) {
+                    oniUnlocked = true;
+                    unlockedOniNow = true;
+                }
+                legendary = selectedDiff === 'oni' && streak.oni === 5;
+                saveRanking(selectedDiff, streak[selectedDiff]);
+            }
+            resultDiv.classList.toggle('milestone', milestone);
+            resultDiv.classList.toggle('super-milestone', superMilestone || unlockedOniNow);
+            resultDiv.classList.toggle('legendary', legendary);
+            resultDiv.style.display = 'block';
+            resultDiv.style.fontSize = '34px';
+            resultDiv.style.textShadow = 'none';
+            resultDiv.textContent = legendary
+                ? '👑 鬼ムズ5連続完全制覇！ 👑\n神業すぎる！ あなたは伝説です！！'
+                : unlockedOniNow
+                ? '🔥 5連続成功！ 鬼ムズ解放！ 🔥'
+                : milestone
+                ? `🎉 ${streak[selectedDiff]}連続成功！ 🎉`
+                : correct ? '✨ 正解！ ✨' : '💥 はずれ！ 💥';
+            resultDiv.style.background = correct ? '#d1fae5' : '#fee2e2';
+            resultDiv.style.color = correct ? '#065f46' : '#7f1d1d';
+            const resultDuration = legendary ? 4000 : 1500;
+            const controlsDelay = legendary ? 4200 : 1700;
+            if (correct) {
+                if (legendary) {
+                    playLegendary();
+                    showLegendaryEffect();
+                } else if (superMilestone || unlockedOniNow) {
+                    playMilestone();
+                    setTimeout(playMilestone, 520);
+                } else if (milestone) playMilestone();
+                else playCorrect();
+                if (!legendary) showHitEffect(true, milestone);
+                draw(); // 即時反映
+                setTimeout(() => {
+                    startBtn.disabled = false;
+                    updateDifficultyButtons(false);
+                    playerNameInput.disabled = false;
+                }, controlsDelay);
+            } else {
+                // 不正解：内部の streak はリセットするが、表示用は変更しない（次のスタートで反映）
+                streak[selectedDiff] = 0;
+                playWrong();
+                showHitEffect(false);
+                const win = cups.find(x => x.hasBall);
+                await new Promise(r => setTimeout(r, 800));
+                liftingCup = win;
+                liftAmount = cfg.lift;
+                draw(); // 表示は displayedStreak を使うので変わらない
+                setTimeout(() => {
+                    startBtn.disabled = false;
+                    updateDifficultyButtons(false);
+                    playerNameInput.disabled = false;
+                }, 1700);
+            }
+            await new Promise(r => setTimeout(r, resultDuration));
+            resultDiv.style.display = 'none';
+            resultDiv.classList.remove('milestone', 'super-milestone', 'legendary');
+            liftingCup = null;
+            liftAmount = 0;
+            isShuffling = false;
+        }
+
+        canvas.addEventListener('click', e => {
+            if (isShuffling || !gameActive) return;
+            const r = canvas.getBoundingClientRect();
+            const x = (e.clientX - r.left) * canvas.width / r.width,
+                y = (e.clientY - r.top) * canvas.height / r.height;
+            for (const c of cups) {
+                if (x >= c.x && x <= c.x + c.w && y >= c.y && y <= c.y + c.h) {
+                    revealCup(c);
+                    break;
+                }
+            }
+        });
+
+        playerNameInput.addEventListener('change', () => {
+            const nextPlayer = playerNameInput.value.trim().slice(0, 12);
+            playerNameInput.value = nextPlayer;
+            if (nextPlayer !== currentPlayer) {
+                currentPlayer = nextPlayer;
+                oniUnlocked = false;
+                for (const diff of Object.keys(streak)) {
+                    streak[diff] = 0;
+                    displayedStreak[diff] = 0;
+                }
+                if (selectedDiff === 'oni') {
+                    selectedDiff = null;
+                    diffBtns.forEach(btn => btn.classList.remove('selected'));
+                }
+                updateDifficultyButtons(false);
+                renderRanking();
+                draw();
+            }
+            startBtn.disabled = !selectedDiff;
+            saveSettings();
+        });
+
+        playerNameInput.addEventListener('input', () => {
+            startBtn.disabled = !selectedDiff;
+        });
+
+        bgmToggle.addEventListener('change', () => {
+            if (bgmToggle.checked && selectedDiff) bgm1.play().catch(() => {});
+            else bgm1.pause();
+            saveSettings();
+        });
+
+        sfxToggle.addEventListener('change', () => {
+            sfxEnabled = sfxToggle.checked;
+            saveSettings();
+        });
+
+        motionToggle.addEventListener('change', () => {
+            motionEnabled = motionToggle.checked;
+            document.body.classList.toggle('motion-off', !motionEnabled);
+            saveSettings();
+        });
+
+        developerModeBtn.addEventListener('click', () => {
+            if (developerMode) {
+                developerMode = false;
+                document.body.classList.remove('developer-mode');
+                developerModeBtn.textContent = '開発者モード';
+                developerPassword.value = '';
+                developerError.textContent = '';
+                return;
+            }
+            developerLogin.classList.toggle('open');
+            developerError.textContent = '';
+            if (developerLogin.classList.contains('open')) developerPassword.focus();
+        });
+
+        function authenticateDeveloper() {
+            if (developerPassword.value !== 'sisa') {
+                developerError.textContent = 'パスワードが違います';
+                developerPassword.select();
+                return;
+            }
+            developerMode = true;
+            document.body.classList.add('developer-mode');
+            developerModeBtn.textContent = '開発者モードを終了';
+            developerLogin.classList.remove('open');
+            developerPassword.value = '';
+            developerError.textContent = '';
+        }
+
+        developerLoginBtn.addEventListener('click', authenticateDeveloper);
+        developerPassword.addEventListener('keydown', e => {
+            if (e.key === 'Enter') authenticateDeveloper();
+        });
+
+        resetRankingBtn.addEventListener('click', () => {
+            if (!developerMode) return;
+            if (!confirm('全難易度のランキングをリセットします。よろしいですか？')) return;
+            rankings = {};
+            try {
+                localStorage.removeItem(STORAGE_KEY);
+            } catch (_) {}
+            renderRanking();
+            alert('ランキングをリセットしました');
+        });
+
+        diffBtns.forEach(btn => {
+            btn.onclick = () => {
+                if (btn.dataset.diff === 'oni' && !oniUnlocked) return;
+                diffBtns.forEach(b => b.classList.remove('selected'));
+                btn.classList.add('selected');
+                selectedDiff = btn.dataset.diff;
+                startBtn.disabled = false;
+                if (bgmToggle.checked) bgm1.play().catch(() => {});
+                renderRanking();
+            };
+        });
+
+        startBtn.onclick = async () => {
+            currentPlayer = playerNameInput.value.trim().slice(0, 12) || '名無し';
+            playerNameInput.value = currentPlayer;
+            if (!selectedDiff) return;
+            saveSettings();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+
+            // ── ここで「不正解で内部的にリセットされた streak」を表示に反映する ──
+            // （不正解の場合はここで displayedStreak が streak と一致して 0 になる）
+            displayedStreak[selectedDiff] = streak[selectedDiff];
+            draw();
+
+            const s = DIFF[selectedDiff];
+            buildCups(s.count);
+            showInitial = true;
+            draw();
+            updateDifficultyButtons(true);
+            startBtn.disabled = true;
+            playerNameInput.disabled = true;
+
+            // カウントダウン演出
+            resultDiv.style.display = 'block';
+            resultDiv.style.background = 'transparent';
+            resultDiv.style.color = '#fff';
+            resultDiv.style.fontSize = '60px';
+            resultDiv.style.textShadow = '0 0 15px rgba(0,0,0,0.6)';
+
+            const countdown = ['3', '2', '1', 'スタート！'];
+            const playJazzHit = (type) => {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                gain.connect(audioCtx.destination);
+                if (type === "kick") {
+                    osc.type = "sine";
+                    osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.2);
+                    gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.25);
+                } else if (type === "ride") {
+                    osc.type = "square";
+                    osc.frequency.setValueAtTime(1000, audioCtx.currentTime);
+                    gain.gain.setValueAtTime(0.035, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+                }
+                osc.connect(gain);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.5);
+            };
+
+            for (let i = 0; i < countdown.length; i++) {
+                resultDiv.textContent = countdown[i];
+                playJazzHit(i < 3 ? "kick" : "ride");
+                await new Promise(r => setTimeout(r, 800));
+            }
+
+            resultDiv.style.display = 'none';
+            showInitial = false;
+            draw();
+            setTimeout(() => shuffleTimes(s.swaps, s.speed), 400);
+        };
+
+        updateDifficultyButtons(false);
+        draw();
+    </script>
+</body>
+
+</html>
