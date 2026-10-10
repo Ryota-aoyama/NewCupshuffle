@@ -279,6 +279,7 @@
             display: flex;
             justify-content: flex-end;
             align-items: center;
+            flex-wrap: wrap;
             gap: 8px;
             margin-top: 8px;
         }
@@ -293,10 +294,28 @@
             font: inherit;
         }
 
-        #resetRankingBtn {
+        #resetRankingBtn,
+        #deletePlayerRankingBtn,
+        #unlockOniBtn,
+        #unlockLimitBtn,
+        #rankingPlayerSelect {
             display: none;
+        }
+
+        #resetRankingBtn,
+        #deletePlayerRankingBtn {
             border-color: #ef4444;
             background: #7f1d1d;
+        }
+
+        #rankingPlayerSelect {
+            max-width: 150px;
+            padding: 5px 7px;
+            border: 1px solid #64748b;
+            border-radius: 7px;
+            background: #fff;
+            color: #0f172a;
+            font: inherit;
         }
 
         #developerStatus {
@@ -331,6 +350,10 @@
         }
 
         body.developer-mode #resetRankingBtn,
+        body.developer-mode #deletePlayerRankingBtn,
+        body.developer-mode #unlockOniBtn,
+        body.developer-mode #unlockLimitBtn,
+        body.developer-mode #rankingPlayerSelect,
         body.developer-mode #developerStatus {
             display: inline-block;
         }
@@ -422,8 +445,9 @@
                 data-tooltip="この難易度以上をクリアできたらすごい！">難しい</button>
             <button class="difficulty-btn" data-diff="extreme">激ムズ</button>
             <button class="difficulty-btn locked" data-diff="oni" aria-disabled="true"
-                title="激ムズで5回連続成功すると解放"
-                data-tooltip="激ムズで5回連続成功すると解放">鬼ムズ 🔒</button>
+                title="激ムズで3回連続成功すると解放"
+                data-tooltip="激ムズで3回連続成功すると解放">鬼ムズ 🔒</button>
+            <button class="difficulty-btn" data-diff="limit" hidden>開発者の限界モード</button>
             <button id="startBtn" disabled>スタート</button>
         </div>
         <div class="game-stage">
@@ -437,6 +461,10 @@
             <div class="ranking-actions">
                 <span id="developerStatus">開発者モード中</span>
                 <button id="developerModeBtn" class="small-btn" type="button">開発者モード</button>
+                <select id="rankingPlayerSelect" aria-label="削除するプレイヤー"></select>
+                <button id="deletePlayerRankingBtn" class="small-btn" type="button">選択した人を削除</button>
+                <button id="unlockOniBtn" class="small-btn" type="button">鬼ムズを解放</button>
+                <button id="unlockLimitBtn" class="small-btn" type="button">限界モードを解放</button>
                 <button id="resetRankingBtn" class="small-btn" type="button">ランキングをリセット</button>
             </div>
             <div id="developerLogin">
@@ -469,6 +497,10 @@
         const rankingList = document.getElementById('rankingList');
         const developerModeBtn = document.getElementById('developerModeBtn');
         const resetRankingBtn = document.getElementById('resetRankingBtn');
+        const rankingPlayerSelect = document.getElementById('rankingPlayerSelect');
+        const deletePlayerRankingBtn = document.getElementById('deletePlayerRankingBtn');
+        const unlockOniBtn = document.getElementById('unlockOniBtn');
+        const unlockLimitBtn = document.getElementById('unlockLimitBtn');
         const developerLogin = document.getElementById('developerLogin');
         const developerPassword = document.getElementById('developerPassword');
         const developerLoginBtn = document.getElementById('developerLoginBtn');
@@ -482,6 +514,7 @@
         let motionEnabled = true;
         let developerMode = false;
         let oniUnlocked = false;
+        let limitUnlocked = false;
 
         try {
             rankings = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
@@ -510,7 +543,8 @@
             normal: 0,
             hard: 0,
             extreme: 0,
-            oni: 0
+            oni: 0,
+            limit: 0
         };
 
         // 表示用カウンター（画面に描画する値）
@@ -520,7 +554,8 @@
             normal: 0,
             hard: 0,
             extreme: 0,
-            oni: 0
+            oni: 0,
+            limit: 0
         };
 
         const cfgBase = {
@@ -559,6 +594,11 @@
                 count: 5,
                 swaps: 36,
                 speed: 150
+            },
+            limit: {
+                count: 5,
+                swaps: 50,
+                speed: 140
             }
         };
 
@@ -687,6 +727,7 @@
         }
 
         function renderRanking() {
+            renderDeveloperPlayers();
             rankingList.textContent = '';
             if (!selectedDiff) {
                 rankingTitle.textContent = '難易度を選ぶとランキングを表示します';
@@ -707,6 +748,32 @@
             });
         }
 
+        function renderDeveloperPlayers() {
+            const previous = rankingPlayerSelect.value;
+            const names = [...new Set(
+                Object.values(rankings).flat().map(entry => entry.name)
+            )].sort((a, b) => a.localeCompare(b, 'ja'));
+            rankingPlayerSelect.textContent = '';
+            if (!names.length) {
+                const option = document.createElement('option');
+                option.textContent = '記録なし';
+                option.value = '';
+                rankingPlayerSelect.appendChild(option);
+                rankingPlayerSelect.disabled = true;
+                deletePlayerRankingBtn.disabled = true;
+                return;
+            }
+            names.forEach(name => {
+                const option = document.createElement('option');
+                option.value = name;
+                option.textContent = name;
+                rankingPlayerSelect.appendChild(option);
+            });
+            if (names.includes(previous)) rankingPlayerSelect.value = previous;
+            rankingPlayerSelect.disabled = false;
+            deletePlayerRankingBtn.disabled = false;
+        }
+
         function saveRanking(diff, score) {
             if (!currentPlayer || score < 1) return;
             const entries = rankings[diff] || [];
@@ -724,18 +791,24 @@
         }
 
         function updateDifficultyButtons(gameLocked = false) {
+            const interactionLocked = gameLocked || isShuffling || gameActive;
             diffBtns.forEach(btn => {
                 const locked = btn.dataset.diff === 'oni' && !oniUnlocked;
-                btn.disabled = gameLocked;
+                if (btn.dataset.diff === 'limit') btn.hidden = !limitUnlocked;
+                btn.disabled = interactionLocked;
                 btn.setAttribute('aria-disabled', locked ? 'true' : 'false');
                 btn.classList.toggle('locked', locked);
                 if (btn.dataset.diff === 'oni') {
                     btn.textContent = locked ? '鬼ムズ 🔒' : '鬼ムズ';
-                    btn.title = locked ? '激ムズで5回連続成功すると解放' : '鬼ムズに挑戦できます';
-                    if (locked) btn.dataset.tooltip = '激ムズで5回連続成功すると解放';
+                    btn.title = locked ? '激ムズで3回連続成功すると解放' : '鬼ムズに挑戦できます';
+                    if (locked) btn.dataset.tooltip = '激ムズで3回連続成功すると解放';
                     else btn.removeAttribute('data-tooltip');
                 }
             });
+            unlockOniBtn.textContent = oniUnlocked ? '鬼ムズ解放済み' : '鬼ムズを解放';
+            unlockOniBtn.disabled = oniUnlocked;
+            unlockLimitBtn.textContent = limitUnlocked ? '限界モード解放済み' : '限界モードを解放';
+            unlockLimitBtn.disabled = limitUnlocked;
         }
 
         function buildCups(count) {
@@ -789,7 +862,8 @@
                 normal: ['#b3e5ff', '#007bff'],
                 hard: ['#fff7b3', '#ffb400'],
                 extreme: ['#ffb3b3', '#d40000'],
-                oni: ['#f5d0fe', '#7e22ce']
+                oni: ['#f5d0fe', '#7e22ce'],
+                limit: ['#ffffff', '#111827']
             };
             const [light, dark] = colors[selectedDiff] || ['#fff8b3', '#ffb400'];
             g.addColorStop(0, light);
@@ -821,10 +895,13 @@
                 normal: '#60a5fa',
                 hard: '#facc15',
                 extreme: '#f87171',
-                oni: '#e879f9'
+                oni: '#e879f9',
+                limit: '#ffffff'
             };
             let line = 0;
-            for (const diff of ['easy', 'normal', 'hard', 'extreme', 'oni']) {
+            const visibleDifficulties = ['easy', 'normal', 'hard', 'extreme', 'oni'];
+            if (limitUnlocked) visibleDifficulties.push('limit');
+            for (const diff of visibleDifficulties) {
                 ctx.fillStyle = colors[diff];
                 ctx.fillText(difficultyLabels[diff] + ' 連続正解: ' + displayedStreak[diff], canvas.width - padding, 30 + line * 24);
                 line++;
@@ -904,38 +981,46 @@
             let milestone = false;
             let superMilestone = false;
             let unlockedOniNow = false;
+            let unlockedLimitNow = false;
             let legendary = false;
             if (correct) {
                 streak[selectedDiff]++;
                 displayedStreak[selectedDiff]++;
                 milestone = streak[selectedDiff] === 3 || streak[selectedDiff] % 5 === 0;
                 superMilestone = streak[selectedDiff] % 10 === 0;
-                if (selectedDiff === 'extreme' && streak.extreme === 5 && !oniUnlocked) {
+                if (selectedDiff === 'extreme' && streak.extreme === 3 && !oniUnlocked) {
                     oniUnlocked = true;
                     unlockedOniNow = true;
                 }
                 legendary = selectedDiff === 'oni' && streak.oni === 5;
+                if (selectedDiff === 'oni' && streak.oni === 10 && !limitUnlocked) {
+                    limitUnlocked = true;
+                    unlockedLimitNow = true;
+                }
                 saveRanking(selectedDiff, streak[selectedDiff]);
             }
+            const ultimateCelebration = legendary || unlockedLimitNow;
             resultDiv.classList.toggle('milestone', milestone);
-            resultDiv.classList.toggle('super-milestone', superMilestone || unlockedOniNow);
-            resultDiv.classList.toggle('legendary', legendary);
+            resultDiv.classList.toggle('super-milestone', superMilestone || unlockedOniNow || unlockedLimitNow);
+            resultDiv.classList.toggle('legendary', ultimateCelebration);
             resultDiv.style.display = 'block';
             resultDiv.style.fontSize = '34px';
             resultDiv.style.textShadow = 'none';
-            resultDiv.textContent = legendary
+            resultDiv.textContent = unlockedLimitNow
+                ? '⚠️ SECRET UNLOCKED ⚠️\n「開発者の限界モード」解放'
+                : legendary
                 ? '👑 鬼ムズ5連続完全制覇！ 👑\n神業すぎる！ あなたは伝説です！！'
                 : unlockedOniNow
-                ? '🔥 5連続成功！ 鬼ムズ解放！ 🔥'
+                ? '🔥 3連続成功！ 鬼ムズ解放！ 🔥'
                 : milestone
                 ? `🎉 ${streak[selectedDiff]}連続成功！ 🎉`
                 : correct ? '✨ 正解！ ✨' : '💥 はずれ！ 💥';
             resultDiv.style.background = correct ? '#d1fae5' : '#fee2e2';
             resultDiv.style.color = correct ? '#065f46' : '#7f1d1d';
-            const resultDuration = legendary ? 4000 : 1500;
-            const controlsDelay = legendary ? 4200 : 1700;
+            const resultDuration = ultimateCelebration ? 4000 : 1500;
+            const controlsDelay = ultimateCelebration ? 4200 : 1700;
             if (correct) {
-                if (legendary) {
+                if (ultimateCelebration) {
                     playLegendary();
                     showLegendaryEffect();
                 } else if (superMilestone || unlockedOniNow) {
@@ -943,7 +1028,7 @@
                     setTimeout(playMilestone, 520);
                 } else if (milestone) playMilestone();
                 else playCorrect();
-                if (!legendary) showHitEffect(true, milestone);
+                if (!ultimateCelebration) showHitEffect(true, milestone);
                 draw(); // 即時反映
                 setTimeout(() => {
                     startBtn.disabled = false;
@@ -993,11 +1078,12 @@
             if (nextPlayer !== currentPlayer) {
                 currentPlayer = nextPlayer;
                 oniUnlocked = false;
+                limitUnlocked = false;
                 for (const diff of Object.keys(streak)) {
                     streak[diff] = 0;
                     displayedStreak[diff] = 0;
                 }
-                if (selectedDiff === 'oni') {
+                if (selectedDiff === 'oni' || selectedDiff === 'limit') {
                     selectedDiff = null;
                     diffBtns.forEach(btn => btn.classList.remove('selected'));
                 }
@@ -1053,6 +1139,7 @@
             developerMode = true;
             document.body.classList.add('developer-mode');
             developerModeBtn.textContent = '開発者モードを終了';
+            renderDeveloperPlayers();
             developerLogin.classList.remove('open');
             developerPassword.value = '';
             developerError.textContent = '';
@@ -1061,6 +1148,42 @@
         developerLoginBtn.addEventListener('click', authenticateDeveloper);
         developerPassword.addEventListener('keydown', e => {
             if (e.key === 'Enter') authenticateDeveloper();
+        });
+
+        unlockOniBtn.addEventListener('click', () => {
+            if (!developerMode) return;
+            oniUnlocked = true;
+            updateDifficultyButtons(false);
+        });
+
+        unlockLimitBtn.addEventListener('click', () => {
+            if (!developerMode) return;
+            limitUnlocked = true;
+            updateDifficultyButtons(false);
+            draw();
+        });
+
+        deletePlayerRankingBtn.addEventListener('click', () => {
+            if (!developerMode) return;
+            const player = rankingPlayerSelect.value;
+            if (!player) return;
+            if (!confirm(`「${player}」のランキング記録を全難易度から削除します。よろしいですか？`)) return;
+            for (const diff of Object.keys(rankings)) {
+                rankings[diff] = rankings[diff].filter(entry => entry.name !== player);
+                if (!rankings[diff].length) delete rankings[diff];
+            }
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(rankings));
+            } catch (_) {}
+            if (currentPlayer === player) {
+                for (const diff of Object.keys(streak)) {
+                    streak[diff] = 0;
+                    displayedStreak[diff] = 0;
+                }
+                draw();
+            }
+            renderRanking();
+            alert(`「${player}」のランキング記録を削除しました`);
         });
 
         resetRankingBtn.addEventListener('click', () => {
